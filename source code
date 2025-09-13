@@ -1,0 +1,178 @@
+#include <LPC17xx.h>
+#include <stdio.h>
+
+// ---------------- Pin Definitions ----------------
+#define LED_PIN     (1<<0)   // P0.0
+#define BUZZER_PIN  (1<<1)   // P0.1
+#define IR1_PIN     (1<<2)   // P0.2 (Entry Sensor)
+#define IR2_PIN     (1<<3)   // P0.3 (Exit Sensor)
+#define SERVO_PIN   (1<<0)   // P2.0 (PWM1.1)
+
+// ---------------- Global Variables ----------------
+volatile unsigned int visitor_count = 1;   // Start from 1
+unsigned int entries_10s = 0, exits_10s = 0;
+unsigned int entries_hour = 0, exits_hour = 0;
+unsigned int last_sec = 0;
+unsigned int last_hour = 0;
+
+// ---------------- UART0 ----------------
+void uart_init(void) {
+    LPC_SC->PCONP |= (1<<3);
+    LPC_PINCON->PINSEL0 |= (1<<4) | (1<<6); // P0.2=TXD0, P0.3=RXD0
+    LPC_UART0->LCR = 0x83;
+    LPC_UART0->DLL = 97;  // 9600 baud @ 25MHz
+    LPC_UART0->DLM = 0;
+    LPC_UART0->LCR = 0x03;
+}
+void UART_SendByte(char c) {
+    while(!(LPC_UART0->LSR & (1<<5)));
+    LPC_UART0->THR = c;
+}
+void UART_SendString(const char *str) {
+    while(*str) UART_SendByte(*str++);
+}
+
+// ---------------- Delay ----------------
+void delay_ms(unsigned int ms) {
+    unsigned int i,j;
+    for(i=0;i<ms;i++)
+        for(j=0;j<2000;j++);
+}
+
+// ---------------- RTC ----------------
+void rtc_init(void) {
+    LPC_SC->PCONP |= (1<<9);    // Power up RTC
+    LPC_RTC->CCR = 0x02;        // Reset
+    LPC_RTC->CCR = 0x01;        // Enable
+    LPC_RTC->HOUR = 10; 
+    LPC_RTC->MIN  = 10; 
+    LPC_RTC->SEC  = 0;
+}
+void RTC_GetTime(char *buf) {
+    sprintf(buf,"Time = %02d:%02d:%02d\r\n",
+            LPC_RTC->HOUR, LPC_RTC->MIN, LPC_RTC->SEC);
+}
+
+// ---------------- LED + Buzzer ----------------
+void LED_On(void)     { LPC_GPIO0->FIOSET = LED_PIN; }
+void LED_Off(void)    { LPC_GPIO0->FIOCLR = LED_PIN; }
+void Buzzer_On(void)  { LPC_GPIO0->FIOSET = BUZZER_PIN; }
+void Buzzer_Off(void) { LPC_GPIO0->FIOCLR = BUZZER_PIN; }
+
+// ---------------- Servo PWM ----------------
+void servo_init(void) {
+    LPC_SC->PCONP |= (1<<6);          // Power up PWM1
+    LPC_PINCON->PINSEL4 |= (3<<0);    // P2.0 = PWM1.1
+    LPC_PWM1->PCR = (1<<9);           // Enable PWM1.1 output
+    LPC_PWM1->MR0 = 20000;            // 20 ms period (50Hz)
+    LPC_PWM1->MR1 = 1500;             // Initial pulse width 1.5 ms (neutral)
+    LPC_PWM1->MCR = (1<<1);           // Reset on MR0
+    LPC_PWM1->TCR = (1<<1);           // Reset counter
+    LPC_PWM1->TCR |= (1<<0) | (1<<3); // Enable counter & PWM mode
+}
+
+void servo_set_angle(unsigned int angle) {
+    // Convert 0-180� to 1-2 ms pulse width
+    unsigned int pulse = 1000 + (angle * 1000) / 180;
+    LPC_PWM1->MR1 = pulse;
+    LPC_PWM1->LER |= (1<<1); // Update MR1
+}
+
+// ---------------- Alert ----------------
+void Alert_System(void) {
+    LED_On();
+    Buzzer_On();
+    servo_set_angle(0);   // Move servo to 0� for alert
+    delay_ms(500);
+    LED_Off();
+    Buzzer_Off();
+    servo_set_angle(90);  // Return servo to neutral
+}
+
+// ---------------- Main ----------------
+int main(void) {
+    char buf[100];
+
+    uart_init();
+    UART_SendString("========================================\r\n");
+    UART_SendString("Visitor Monitoring System - LPC1768\r\n");
+    UART_SendString("UART @ 9600bps\r\n");
+    UART_SendString("========================================\r\n");
+
+    // GPIO
+    LPC_GPIO0->FIODIR |= LED_PIN | BUZZER_PIN;
+    LPC_GPIO0->FIODIR &= ~(IR1_PIN | IR2_PIN);
+
+    // Servo
+    LPC_GPIO2->FIODIR |= SERVO_PIN;
+    servo_init();
+
+    rtc_init();
+    last_sec = LPC_RTC->SEC;
+    last_hour = LPC_RTC->HOUR;
+
+    while(1) {
+        RTC_GetTime(buf);
+        UART_SendString(buf);
+
+        // Entry Detection
+        if(!(LPC_GPIO0->FIOPIN & IR1_PIN)) {
+            visitor_count++;
+            entries_10s++;
+            entries_hour++;
+            UART_SendString("----------------------------------------\r\n");
+            UART_SendString("Visitor Entered\r\n");
+            sprintf(buf,"Visitor Count = %d\r\n", visitor_count);
+            UART_SendString(buf);
+            Alert_System();
+        }
+
+        // Exit Detection
+        if(!(LPC_GPIO0->FIOPIN & IR2_PIN)) {
+            if(visitor_count > 1) visitor_count--;
+            exits_10s++;
+            exits_hour++;
+            UART_SendString("----------------------------------------\r\n");
+            UART_SendString("Visitor Exited\r\n");
+            sprintf(buf,"Visitor Count = %d\r\n", visitor_count);
+            UART_SendString(buf);
+            Alert_System();
+        }
+
+        // -------- Every 10 seconds Report --------
+        if(((LPC_RTC->SEC - last_sec + 60) % 60) >= 10) {
+            UART_SendString("******** 10-Second Report ********\r\n");
+            sprintf(buf,"Visitors Entered = %d\r\n", entries_10s);
+            UART_SendString(buf);
+            sprintf(buf,"Visitors Exited  = %d\r\n", exits_10s);
+            UART_SendString(buf);
+            sprintf(buf,"Current Count    = %d\r\n", visitor_count);
+            UART_SendString(buf);
+            UART_SendString("**********************************\r\n");
+
+            entries_10s = 0;
+            exits_10s = 0;
+            last_sec = LPC_RTC->SEC;
+        }
+
+        // -------- Hourly Report --------
+        if(LPC_RTC->HOUR != last_hour) {
+            UART_SendString("========= 1 Hour Summary =========\r\n");
+            sprintf(buf,"Hour %02d:00 - %02d:00\r\n", last_hour, LPC_RTC->HOUR);
+            UART_SendString(buf);
+            sprintf(buf,"Total Visitors Entered = %d\r\n", entries_hour);
+            UART_SendString(buf);
+            sprintf(buf,"Total Visitors Exited  = %d\r\n", exits_hour);
+            UART_SendString(buf);
+            sprintf(buf,"Final Count Inside     = %d\r\n", visitor_count);
+            UART_SendString(buf);
+            UART_SendString("=================================\r\n");
+
+            entries_hour = 0;
+            exits_hour = 0;
+            last_hour = LPC_RTC->HOUR;
+        }
+
+        delay_ms(1000);
+    }
+}
