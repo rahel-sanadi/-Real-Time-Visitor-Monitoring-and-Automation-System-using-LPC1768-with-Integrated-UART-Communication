@@ -1,0 +1,56 @@
+# Real-Time Visitor Monitoring and Automation System using LPC1768 with Integrated UART Communication
+
+## 📌 Project Overview
+This project implements a **real-time visitor monitoring and automation system** on the **LPC1768 ARM Cortex-M3 microcontroller**.  
+It combines hardware and firmware solutions to provide automated visitor tracking, data logging, and gate control.
+
+The system uses:
+- **UART communication** for serial monitoring and debugging.
+- **IR sensors** to detect entry and exit events.
+- **PWM-controlled servo motor** for automated gate operation.
+- **RTC (Real-Time Clock)** for accurate visitor time-stamping.
+- **I²C-based EEPROM** for reliable visitor data storage.
+- **Menu-driven interface** for system control and monitoring.
+
+---
+
+## 🚀 Features
+- **Real-Time Visitor Tracking** – detects and logs entry/exit events automatically.
+- **Automated Gate Control** – servo motor controlled via PWM for smooth gate operation.
+- **Accurate Time-Stamping** – RTC integration ensures precise logs of visitor activity.
+- **Data Persistence** – EEPROM used for secure and reliable visitor data storage.
+- **UART Communication** – serial interface for monitoring and debugging.
+- **Menu-Driven Operations** – user-friendly interface for log access and system control.
+- **Modular Code Structure** – enhances reliability, reusability, and error-free execution.
+
+---
+
+## 🔧 Hardware Requirements
+- **LPC1768 Development Board** (ARM Cortex-M3 MCU)  
+- **IR Sensors** (entry & exit detection)  
+- **Servo Motor** (PWM-controlled for gate automation)  
+- **RTC Module (DS1307/DS3231)** – I²C communication  
+- **EEPROM (24Cxx series)** – I²C communication  
+- **UART-USB Converter** – for PC serial monitoring  
+- **Power Supply (5V regulated)**  
+
+---
+
+## 💻 Software Requirements
+- **Keil uVision / ARM GCC Toolchain** (for LPC1768 firmware development)  
+- **Flash Magic / LPCXpresso** (for programming LPC1768)  
+- **Serial Monitor** (PuTTY, Tera Term, or Arduino Serial Monitor)  
+
+---
+
+## ⚙️ System Workflow
+1. **Visitor arrives** → IR entry sensor detects presence.  
+2. **Servo motor opens gate** → controlled via PWM.  
+3. **Visitor logged** → RTC timestamps entry, data stored in EEPROM.  
+4. **Visitor exits** → IR exit sensor detects departure, event logged.  
+5. **Data monitoring** → UART displays logs in real-time.  
+6. **User interaction** → menu-driven operations for log retrieval & system settings.  
+
+---
+
+## 📂 Project Structure
